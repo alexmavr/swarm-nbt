@@ -55,6 +55,22 @@ var cmdPause = cli.Command{
 	},
 }
 
+var cmdAgent = cli.Command{
+	Name:  "agent",
+	Usage: "Start a local node agent for network metric collection",
+	Description: `
+	`,
+	Action: StartBenchmark,
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:   "docker_socket",
+			Usage:  "The path where the docker socket is located within this container",
+			EnvVar: "DOCKER_SOCKET",
+			Hidden: true,
+		},
+	},
+}
+
 // Driver function
 func main() {
 	app := cli.NewApp()
@@ -64,7 +80,9 @@ func main() {
 		cmdStart,
 		cmdPause,
 		cmdStop,
+		cmdAgent,
 	}
+	app.Version = "1.0.0"
 	log.SetFormatter(&log.JSONFormatter{})
 
 	if err := app.Run(os.Args); err != nil {
