@@ -1,5 +1,5 @@
 {
-	"ImportPath": "github.com/alexmavr/swarm-benchnet/runner-tool",
+	"ImportPath": "github.com/alexmavr/swarm-benchnet",
 	"GoVersion": "go1.7",
 	"GodepVersion": "v74",
 	"Packages": [
@@ -19,11 +19,6 @@
 			"ImportPath": "github.com/codegangsta/cli",
 			"Comment": "v1.19.1-21-g347a988",
 			"Rev": "347a9884a87374d000eec7e6445a34487c1f4a2b"
-		},
-		{
-			"ImportPath": "github.com/docker/distribution/digest",
-			"Comment": "v2.2.1-20-gc56d49b",
-			"Rev": "c56d49b111aea675a81d411c2db1acfac6179de9"
 		},
 		{
 			"ImportPath": "github.com/docker/distribution/reference",
