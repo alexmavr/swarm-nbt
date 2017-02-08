@@ -6,10 +6,8 @@ ARG GOARCH
 COPY . /go/src/github.com/alexmavr/swarm-benchnet
 WORKDIR /go/src/github.com/alexmavr/swarm-benchnet
 
-RUN go install github.com/tools/godep
-
-RUN set -ex && apk add --no-cache --virtual .build-deps git \
-	&& GOARCH=$GOARCH GOOS=$GOOS CGO_ENABLED=0 godep go install -v -a -tags netgo -installsuffix netgo -ldflags "-w -X github.com/alexmavr/swarm-benchnet/version.GITCOMMIT=$(git rev-parse --short HEAD) -X github.com/alexmavr/swarm-benchnet/version.BUILDTIME=$(date -u +%FT%T%z)" \
+RUN set -ex && apk add --no-cache --virtual .build-deps git && go get github.com/tools/godep 
+RUN GOARCH=$GOARCH GOOS=$GOOS CGO_ENABLED=0 godep go install -v -a -tags netgo -installsuffix netgo -ldflags "-w -X github.com/alexmavr/swarm-benchnet/version.GITCOMMIT=$(git rev-parse --short HEAD) -X github.com/alexmavr/swarm-benchnet/version.BUILDTIME=$(date -u +%FT%T%z)" \
 	&& apk del .build-deps
 
-ENTRYPOINT ["./swarm-netbench"]
+ENTRYPOINT ["/go/bin/swarm-benchnet"]

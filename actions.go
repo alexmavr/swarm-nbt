@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -31,6 +32,22 @@ func StartBenchmark(c *cli.Context) error {
 		return fmt.Errorf("This node is not a Swarm Manager, please start the benchmark on a swarm manager node")
 	}
 
+	// Determine the node inventory and pass it as an environment variable
+	nodeInventory := make(map[string]string) // dict from hostname to IPv4 address
+	nodes, err := dclient.NodeList(ctx, types.NodeListOptions{})
+	if err != nil {
+		return err
+	}
+	for _, node := range nodes {
+		nodeInventory[node.Description.Hostname] = node.Status.Addr
+	}
+	// Marshal the node inventory into a string
+	nodeInvBytes, err := json.Marshal(nodeInventory)
+	if err != nil {
+		return err
+	}
+	nodeInventoryPayload := string(nodeInvBytes)
+
 	// Start a global service that runs this image with the "agent" verb and a local volume mount
 	spec := swarm.ServiceSpec{
 		Annotations: swarm.Annotations{
@@ -42,7 +59,8 @@ func StartBenchmark(c *cli.Context) error {
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: swarm.ContainerSpec{
 				Image:   "alexmavr/swarm-benchnet:latest",
-				Command: []string{"agent"},
+				Command: []string{"/go/bin/swarm-benchnet", "agent"},
+				Env:     []string{fmt.Sprintf("NODES=%s", nodeInventoryPayload)},
 				Mounts: []mount.Mount{
 					// Mount a volume for result data
 					mount.Mount{
@@ -83,19 +101,45 @@ func StopBenchmark(c *cli.Context) error {
 	}
 
 	// TODO: collect results and pretty-print
-
 	return nil
 }
 
 func PauseBenchmark(c *cli.Context) error {
-	log.Info("unimplemented, cannot pause yet")
+	log.Info("unimplemented")
 	return nil
 }
 
 func NodeAgent(c *cli.Context) error {
-	return nil
+	dclient, err := getDockerClient(c.String("docker_socket"))
+	if err != nil {
+		return err
+	}
+
+	nodesJson := c.String("nodes")
+	if nodesJson == "" {
+		return fmt.Errorf("empty node inventory received")
+	}
+
+	var nodes map[string]string
+	err = json.Unmarshal([]byte(nodesJson), &nodes)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancelFunc := context.WithDeadline(context.Background(), time.Now().Add(time.Minute))
+	defer cancelFunc()
+
+	info, err := dclient.Info(ctx)
+	if err != nil {
+		return err
+	}
+
+	return NetworkTest(dclient, nodes, info.Swarm.NodeAddr)
 }
 
 func getDockerClient(dockerSocket string) (client.CommonAPIClient, error) {
+	if dockerSocket == "" {
+		return nil, fmt.Errorf("empty docker socket provided")
+	}
 	return client.NewClient(fmt.Sprintf("unix://%s", dockerSocket), "1.24", nil, nil)
 }

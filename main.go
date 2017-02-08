@@ -18,6 +18,7 @@ var cmdStart = cli.Command{
 			Name:   "docker_socket",
 			Usage:  "The path where the docker socket is located within this container",
 			EnvVar: "DOCKER_SOCKET",
+			Value:  "/var/run/docker.sock",
 			Hidden: true,
 		},
 	},
@@ -34,6 +35,7 @@ var cmdStop = cli.Command{
 			Name:   "docker_socket",
 			Usage:  "The path where the docker socket is located within this container",
 			EnvVar: "DOCKER_SOCKET",
+			Value:  "/var/run/docker.sock",
 			Hidden: true,
 		},
 	},
@@ -60,13 +62,19 @@ var cmdAgent = cli.Command{
 	Usage: "Start a local node agent for network metric collection",
 	Description: `
 	`,
-	Action: StartBenchmark,
+	Action: NodeAgent,
 	Flags: []cli.Flag{
 		cli.StringFlag{
 			Name:   "docker_socket",
 			Usage:  "The path where the docker socket is located within this container",
 			EnvVar: "DOCKER_SOCKET",
+			Value:  "/var/run/docker.sock",
 			Hidden: true,
+		},
+		cli.StringFlag{
+			Name:   "nodes",
+			Usage:  "The node inventory to scan against, as a map from hostname to node IPv4 address",
+			EnvVar: "NODES",
 		},
 	},
 }
