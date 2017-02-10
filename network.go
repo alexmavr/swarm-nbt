@@ -131,13 +131,13 @@ func (p *HTTPPinger) Run() {
 		_, err := http.Get(target)
 		if err != nil {
 			log.Errorf("unable to reach http target %s: %s", target, err)
-			p.Outfile.WriteString(fmt.Sprintf("%d\t%s\t%d\n", time.Now().Nanosecond(), target, -1))
+			p.Outfile.WriteString(fmt.Sprintf("%d\t%s\t%d\n", time.Now().UnixNano(), target, -1))
 			continue
 		}
 		endTime := time.Now()
 		rtt := endTime.Sub(startTime)
 		log.Infof("HTTP: Target: %s receive, RTT: %v", target, rtt)
-		_, err = p.Outfile.WriteString(fmt.Sprintf("%d\t%s\t%d\n", time.Now().Nanosecond(), target, rtt.Nanoseconds()))
+		_, err = p.Outfile.WriteString(fmt.Sprintf("%d\t%s\t%d\n", time.Now().UnixNano(), target, rtt.Nanoseconds()))
 		if err != nil {
 			log.Errorf("unable to write to HTTP results file: %s", err)
 		}
