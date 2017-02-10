@@ -56,6 +56,15 @@ func StartBenchmark(c *cli.Context) error {
 		Mode: swarm.ServiceMode{
 			Global: &swarm.GlobalService{},
 		},
+		EndpointSpec: &swarm.EndpointSpec{
+			Ports: []swarm.PortConfig{
+				{
+					Protocol:      swarm.PortConfigProtocolTCP,
+					TargetPort:    4443,
+					PublishedPort: 4443,
+				},
+			},
+		},
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: swarm.ContainerSpec{
 				Image:   "alexmavr/swarm-benchnet:latest",
