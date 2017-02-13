@@ -16,15 +16,15 @@ The tool supports the following operations:
 
 * start/continue benchmark:
 	```
-		docker run --rm -v /var/run/docker.sock:/var/run/docker.sock alexmavr/swarm-netbench start
+		docker run --rm -v /var/run/docker.sock:/var/run/docker.sock alexmavr/swarm-nbt start
 	```
 
 * pause benchmark:
 	```
-		docker run --rm -v /var/run/docker.sock:/var/run/docker.sock alexmavr/swarm-netbench pause
+		docker run --rm -v /var/run/docker.sock:/var/run/docker.sock alexmavr/swarm-nbt pause
 	```
 
 * stop & process results
 	```
-		docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v /path/to/results/dir:/output alexmavr/swarm-netbench stop  
+		docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v /path/to/results/dir:/output alexmavr/swarm-nbt stop  
 	```

@@ -41,22 +41,6 @@ var cmdStop = cli.Command{
 	},
 }
 
-var cmdPause = cli.Command{
-	Name:  "pause",
-	Usage: "Pause a swarm network benchmark. Running the `start` operation will resume the benchmark",
-	Description: `
-	`,
-	Action: StopBenchmark,
-	Flags: []cli.Flag{
-		cli.StringFlag{
-			Name:   "docker_socket",
-			Usage:  "The path where the docker socket is located within this container",
-			EnvVar: "DOCKER_SOCKET",
-			Hidden: true,
-		},
-	},
-}
-
 var cmdAgent = cli.Command{
 	Name:  "agent",
 	Usage: "Start a local node agent for network metric collection",
@@ -86,7 +70,6 @@ func main() {
 	app.Usage = "Start, Pause or Stop a Networking Benchmark"
 	app.Commands = []cli.Command{
 		cmdStart,
-		cmdPause,
 		cmdStop,
 		cmdAgent,
 	}

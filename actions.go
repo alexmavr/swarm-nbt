@@ -4,6 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
@@ -15,6 +19,8 @@ import (
 )
 
 func StartBenchmark(c *cli.Context) error {
+	log.SetOutput(os.Stdout)
+
 	dclient, err := getDockerClient(c.String("docker_socket"))
 	if err != nil {
 		return err
@@ -51,7 +57,7 @@ func StartBenchmark(c *cli.Context) error {
 	// Start a global service that runs this image with the "agent" verb and a local volume mount
 	spec := swarm.ServiceSpec{
 		Annotations: swarm.Annotations{
-			Name: "swarm-benchnet-service",
+			Name: "swarm-nbt",
 		},
 		Mode: swarm.ServiceMode{
 			Global: &swarm.GlobalService{},
@@ -67,14 +73,14 @@ func StartBenchmark(c *cli.Context) error {
 		},
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: swarm.ContainerSpec{
-				Image:   "alexmavr/swarm-benchnet:latest",
-				Command: []string{"/go/bin/swarm-benchnet", "agent"},
+				Image:   "alexmavr/swarm-nbt:latest",
+				Command: []string{"/go/bin/swarm-nbt", "agent"},
 				Env:     []string{fmt.Sprintf("NODES=%s", nodeInventoryPayload)},
 				Mounts: []mount.Mount{
 					// Mount a volume for result data
 					mount.Mount{
 						Type:   mount.TypeVolume,
-						Source: "swarm-benchnet-results",
+						Source: "swarm-nbt-results",
 						Target: "/results",
 					},
 					// Bind-mount the docker socket
@@ -95,7 +101,11 @@ func StartBenchmark(c *cli.Context) error {
 	return nil
 }
 
+// StopBenchmark determines the list of nodes, contacts the http server on each node
+// and collects all benchmark results. It then calls the process method of each result type
 func StopBenchmark(c *cli.Context) error {
+	log.SetOutput(os.Stdout)
+
 	dclient, err := getDockerClient(c.String("docker_socket"))
 	if err != nil {
 		return err
@@ -104,17 +114,56 @@ func StopBenchmark(c *cli.Context) error {
 	ctx, cancelFunc := context.WithDeadline(context.Background(), time.Now().Add(time.Minute))
 	defer cancelFunc()
 
-	err = dclient.ServiceRemove(ctx, "swarm-benchnet-service")
+	// Inspect the service to extract the list of nodes
+	svc, _, err := dclient.ServiceInspectWithRaw(ctx, "swarm-nbt-service")
 	if err != nil {
 		return err
 	}
 
-	// TODO: collect results and pretty-print
-	return nil
-}
+	var nodes map[string]string
+	for _, envVar := range svc.Spec.TaskTemplate.ContainerSpec.Env {
+		if !strings.Contains(envVar, "NODES") {
+			continue
+		}
 
-func PauseBenchmark(c *cli.Context) error {
-	log.Info("unimplemented")
+		parts := strings.Split(envVar, "=")
+		if len(parts) != 2 {
+			return fmt.Errorf("unexpected number of parts in env var: %s", envVar)
+		}
+
+		err = json.Unmarshal([]byte(parts[1]), &nodes)
+		if err != nil {
+			return err
+		}
+		break
+	}
+
+	// Collect the files from each node
+	for hostname, ip := range nodes {
+		log.Infof("Collecting logs for node %s with IP %s", hostname, ip)
+		for _, file := range []string{"icmp.txt", "http.txt"} {
+			resp, err := http.Get(fmt.Sprintf("http://%s:%s/%s", ip, httpServerPort, file))
+			if err != nil {
+				log.Errorf("unable to collect %s from node %s: %s", file, hostname, err)
+			}
+			httpOut, err := os.Open(fmt.Sprintf("/results/node_%s_http.txt", hostname))
+			if err != nil {
+				return err
+			}
+			defer resp.Body.Close()
+			_, err = io.Copy(httpOut, resp.Body)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// Remove the service
+	err = dclient.ServiceRemove(ctx, "swarm-nbt")
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
