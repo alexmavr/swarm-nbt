@@ -66,8 +66,13 @@ func StartBenchmark(c *cli.Context) error {
 			Ports: []swarm.PortConfig{
 				{
 					Protocol:      swarm.PortConfigProtocolTCP,
-					TargetPort:    4443,
-					PublishedPort: 4443,
+					TargetPort:    httpServerPort,
+					PublishedPort: httpServerPort,
+				},
+				{
+					Protocol:      swarm.PortConfigProtocolUDP,
+					TargetPort:    udpServerPort,
+					PublishedPort: udpServerPort,
 				},
 			},
 		},
