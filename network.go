@@ -6,25 +6,29 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/docker/docker/client"
-	uuid "github.com/satori/go.uuid"
 	fastping "github.com/tatsushid/go-fastping"
 )
 
 const (
 	httpServerPort      = 4443
 	udpServerPort       = 6789
+	udpClientPort       = 6790
 	icmpResultsFilePath = "/results/icmp.txt"
 	httpResultsFilePath = "/results/http.txt"
 	udpResultsFilePath  = "/results/udp.txt"
+
+	// maxPollWaitSeconds is the maximum number of seconds to wait
+	// between successive tests
+	maxPollWaitSeconds = 15
 )
 
-var udpTimeout = time.Minute
+var udpTimeout = 30 * time.Second
+var udpClientTimeout = 30 * time.Second
 var icmpMaxRTT = 10 * time.Second
 
 // NetworkTest collects network link information from the local node against all nodes in the
@@ -51,6 +55,9 @@ func NetworkTest(dclient client.CommonAPIClient, nodes map[string]string, nodeAd
 	}
 	defer udpFile.Close()
 
+	// Create an error channel
+	errChan := make(chan error)
+
 	// Create an ICMP Pinger
 	pinger := fastping.NewPinger()
 	pinger.MaxRTT = icmpMaxRTT
@@ -76,8 +83,12 @@ func NetworkTest(dclient client.CommonAPIClient, nodes map[string]string, nodeAd
 		Timeout:  udpTimeout,
 	}
 
+	// Start a UDP Server on a separate goroutine at port udpServerPort
+	go udpPinger.StartUDPServer(errChan)
+
 	// Start an HTTP Server on a separate goroutine at port httpServerPort
-	errChan := make(chan error)
+	// The HTTP File server is serving the /results directory, and is used
+	// by the bootstrapper during the collection phase
 	go func(errChan chan<- error) {
 		srv := &http.Server{
 			Handler: http.FileServer(http.Dir("/results")),
@@ -86,73 +97,6 @@ func NetworkTest(dclient client.CommonAPIClient, nodes map[string]string, nodeAd
 		err := srv.ListenAndServe()
 		if err != nil {
 			errChan <- err
-		}
-	}(errChan)
-
-	// Start a UDP Server on a separate goroutine at port udpServerPort
-	go func(errChan chan<- error) {
-		serverAddr, err := net.ResolveUDPAddr("udp", udpNodeAddr)
-		if err != nil {
-			errChan <- err
-			return
-		}
-		sock, err := net.ListenUDP("udp", serverAddr)
-		if err != nil {
-			errChan <- err
-			return
-		}
-		defer sock.Close()
-		sock.SetReadBuffer(1048576)
-
-		var udpBuffer [1024]byte
-		for {
-			rlen, _, err := sock.ReadFromUDP(udpBuffer[:])
-			if err != nil {
-				errChan <- err
-				return
-			}
-
-			// Determine if the received packet is an ACK packet from a request sent from this node
-			payload := string(udpBuffer[0:rlen])
-			payloadParts, ack := isAck(payload)
-
-			// The packet is not an acknowledgement of a packet sent from this node
-			// Send an ACK packet back to the return address.
-			if !ack {
-				packetUUID := payloadParts[0]
-				remoteIP := payloadParts[1]
-				log.Infof("UDP: Received SYN from %s for UUID %s, sending ACK", remoteIP, packetUUID)
-				returnAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", remoteIP, udpServerPort))
-				if err != nil {
-					errChan <- err
-					continue
-				}
-				conn, err := net.DialUDP("udp", nil, returnAddr)
-				if err != nil {
-					log.Errorf("unable to dial UDP target %s: %s", remoteIP, err)
-					continue
-				}
-				defer conn.Close()
-
-				payload := []byte(strings.Join([]string{
-					"ACKUDP",
-					packetUUID,
-					remoteIP,
-				}, "\t"))
-
-				_, err = conn.Write(payload)
-				if err != nil {
-					errChan <- err
-					return
-				}
-				conn.Close()
-				continue
-			}
-
-			// The packet is an ACK packet from a round-trip request sent by this node.
-			// Inform the pinger of the received packet
-			packetUUID := payloadParts[1]
-			udpPinger.ReceivedPacket(packetUUID)
 		}
 	}(errChan)
 
@@ -228,140 +172,8 @@ func NetworkTest(dclient client.CommonAPIClient, nodes map[string]string, nodeAd
 		}()
 
 		wg.Wait()
-		time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
+		time.Sleep(time.Duration(rand.Intn(maxPollWaitSeconds)) * time.Second)
 	}
 
 	return nil
-}
-
-// UDPPinger
-type UDPPinger struct {
-	Targets     []*net.UDPAddr
-	Outfile     *os.File
-	NodeAddr    *net.UDPAddr
-	SentPackets map[string]PacketInfo
-	Timeout     time.Duration
-}
-
-type PacketInfo struct {
-	SentTime time.Time
-	Dest     *net.UDPAddr
-}
-
-func (p *UDPPinger) AddIP(ip string) {
-	addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", ip, udpServerPort))
-	if err != nil {
-		log.Errorf("unable to resolve UDP address: %s", ip)
-		return
-	}
-
-	p.Targets = append(p.Targets, addr)
-}
-
-func (p *UDPPinger) ReceivedPacket(packetUUID string) {
-	if p.SentPackets == nil {
-		log.Warnf("Received ACK packet before initializing packet inventory")
-		return
-	}
-
-	packetInfo, found := p.SentPackets[packetUUID]
-	if !found {
-		log.Warnf("Received ACK packet not present in packet inventory with UUID %s", packetUUID)
-		return
-	}
-
-	// Mark the packet as received
-	now := time.Now()
-	rtt := now.Sub(packetInfo.SentTime)
-	log.Infof("UDP: Received ACK, UUID: %s, RTT: %v", packetUUID, rtt)
-
-	_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tRECV\t%s\t%s\t%d\n", now.UnixNano(), packetUUID, packetInfo.Dest.IP.String(), rtt.Nanoseconds()))
-	if err != nil {
-		log.Errorf("unable to mark packet with UUID %s as received: %s", packetUUID, err)
-	}
-
-	delete(p.SentPackets, packetUUID)
-}
-
-func (p *UDPPinger) Run() {
-	if p.SentPackets == nil {
-		p.SentPackets = make(map[string]PacketInfo)
-	}
-
-	for _, target := range p.Targets {
-		conn, err := net.DialUDP("udp", nil, target)
-		if err != nil {
-			log.Errorf("unable to dial UDP target %s: %s", target.String(), err)
-			continue
-		}
-		defer conn.Close()
-
-		// Generate a random UUID for the packet ID
-		newUUID := uuid.NewV4().String()
-		payload := fmt.Sprintf("%s\t%s", newUUID, p.NodeAddr.IP.String())
-
-		log.Infof("UDP: SYN against %s, UUID: %s", target.IP.String(), newUUID)
-		// Send the UDP packet and mark as a SentPacket
-		_, err = conn.Write([]byte(payload))
-		if err != nil {
-			log.Errorf("unable to write UDP packet: %s", err)
-			continue
-		}
-		p.SentPackets[newUUID] = PacketInfo{
-			SentTime: time.Now(),
-			Dest:     target,
-		}
-		conn.Close()
-	}
-
-	// Expire any sent packets that haven't returned for a given timeout
-	now := time.Now()
-	for uuid, packetInfo := range p.SentPackets {
-		if packetInfo.SentTime.Add(p.Timeout).Before(now) {
-			// The timeout has expired for that packet. Mark it as lost
-			_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tLOST\t%s\t%s\n", now.UnixNano(), uuid, packetInfo.Dest.IP.String()))
-			if err != nil {
-				log.Errorf("unable to record UDP packet loss for uuid %s: %s", uuid, err)
-			}
-			delete(p.SentPackets, uuid)
-		}
-	}
-}
-
-// HTTPPinger
-type HTTPPinger struct {
-	Targets []string
-	Outfile *os.File
-}
-
-func (p *HTTPPinger) AddURL(urlString string) {
-	p.Targets = append(p.Targets, urlString)
-}
-
-func (p *HTTPPinger) Run() {
-	for _, target := range p.Targets {
-		startTime := time.Now()
-		_, err := http.Get(target)
-		if err != nil {
-			log.Errorf("unable to reach http target %s: %s", target, err)
-			p.Outfile.WriteString(fmt.Sprintf("%d\t%s\t%d\n", time.Now().UnixNano(), target, -1))
-			continue
-		}
-		endTime := time.Now()
-		rtt := endTime.Sub(startTime)
-		log.Infof("HTTP: Target: %s receive, RTT: %v", target, rtt)
-		_, err = p.Outfile.WriteString(fmt.Sprintf("%d\t%s\t%d\n", time.Now().UnixNano(), target, rtt.Nanoseconds()))
-		if err != nil {
-			log.Errorf("unable to write to HTTP results file: %s", err)
-		}
-	}
-}
-
-// isAck checks if the payload of a UDP packet contains an ACK response
-func isAck(payload string) ([]string, bool) {
-	parts := strings.Split(payload, "\t")
-	if parts[0] == "ACKUDP" {
-		return parts, true
-	}
-	return parts, false
 }

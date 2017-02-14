@@ -46,6 +46,10 @@ func StartBenchmark(c *cli.Context) error {
 	}
 	for _, node := range nodes {
 		nodeInventory[node.Description.Hostname] = node.Status.Addr
+		if node.Status.Addr == "127.0.0.1" && node.ManagerStatus != nil {
+			// If the local manager node is reporting 127.0.0.1, use its manager address
+			nodeInventory[node.Description.Hostname] = strings.Split(node.ManagerStatus.Addr, ":")[0]
+		}
 	}
 	// Marshal the node inventory into a string
 	nodeInvBytes, err := json.Marshal(nodeInventory)
@@ -68,11 +72,19 @@ func StartBenchmark(c *cli.Context) error {
 					Protocol:      swarm.PortConfigProtocolTCP,
 					TargetPort:    httpServerPort,
 					PublishedPort: httpServerPort,
+					PublishMode:   "host",
 				},
 				{
 					Protocol:      swarm.PortConfigProtocolUDP,
 					TargetPort:    udpServerPort,
 					PublishedPort: udpServerPort,
+					PublishMode:   "host",
+				},
+				{
+					Protocol:      swarm.PortConfigProtocolUDP,
+					TargetPort:    udpClientPort,
+					PublishedPort: udpClientPort,
+					PublishMode:   "host",
 				},
 			},
 		},
