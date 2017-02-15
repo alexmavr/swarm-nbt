@@ -127,13 +127,13 @@ func StartBenchmark(c *cli.Context) error {
 // StopBenchmark determines the list of nodes, contacts the http server on each node
 // and collects all benchmark results. It then calls the process method of each result type
 func StopBenchmark(c *cli.Context) error {
+	if c.Bool("compat") {
+		return UCPCompatibilityStop()
+	}
+
 	dclient, err := getDockerClient(c.String("docker_socket"))
 	if err != nil {
 		return err
-	}
-
-	if c.Bool("compat") {
-		return UCPCompatibilityStop(dclient)
 	}
 
 	log.SetOutput(os.Stdout)

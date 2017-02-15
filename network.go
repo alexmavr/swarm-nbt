@@ -11,6 +11,8 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/docker/docker/client"
+	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	fastping "github.com/tatsushid/go-fastping"
 )
 
@@ -90,10 +92,14 @@ func NetworkTest(dclient client.CommonAPIClient, nodes map[string]string, nodeAd
 	// The HTTP File server is serving the /results directory, and is used
 	// by the bootstrapper during the collection phase
 	go func(errChan chan<- error) {
+		router := mux.NewRouter()
+		router.Handle("/prometheus", promhttp.Handler())
+		router.PathPrefix("/").Handler(http.FileServer(http.Dir("/results")))
 		srv := &http.Server{
-			Handler: http.FileServer(http.Dir("/results")),
+			Handler: router,
 			Addr:    fmt.Sprintf(":%d", httpServerPort),
 		}
+		http
 		err := srv.ListenAndServe()
 		if err != nil {
 			errChan <- err

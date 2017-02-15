@@ -1,6 +1,6 @@
 {
 	"ImportPath": "github.com/alexmavr/swarm-nbt",
-	"GoVersion": "go1.7",
+	"GoVersion": "go1.6",
 	"GodepVersion": "v74",
 	"Packages": [
 		"./..."
@@ -14,6 +14,10 @@
 			"ImportPath": "github.com/Sirupsen/logrus",
 			"Comment": "v0.8.7",
 			"Rev": "418b41d23a1bf978c06faea5313ba194650ac088"
+		},
+		{
+			"ImportPath": "github.com/beorn7/perks/quantile",
+			"Rev": "4c0e84591b9aa9e6dcfdf3e020114cd81f89d5f9"
 		},
 		{
 			"ImportPath": "github.com/codegangsta/cli",
@@ -131,6 +135,23 @@
 			"Rev": "0bbddae09c5a5419a8c6dcdd7ff90da3d450393b"
 		},
 		{
+			"ImportPath": "github.com/golang/protobuf/proto",
+			"Rev": "dda510ac0fd43b39770f22ac6260eb91d377bce3"
+		},
+		{
+			"ImportPath": "github.com/gorilla/context",
+			"Rev": "1c83b3eabd45b6d76072b66b746c20815fb2872d"
+		},
+		{
+			"ImportPath": "github.com/gorilla/mux",
+			"Rev": "49c024275504f0341e5a9971eb7ba7fa3dc7af40"
+		},
+		{
+			"ImportPath": "github.com/matttproud/golang_protobuf_extensions/pbutil",
+			"Comment": "v1.0.0-2-gc12348c",
+			"Rev": "c12348ce28de40eed0136aa2b644d0ee0650e56c"
+		},
+		{
 			"ImportPath": "github.com/opencontainers/go-digest",
 			"Comment": "v1.0.0-rc0",
 			"Rev": "aa2ec055abd10d26d539eb630a92241b781ce4bc"
@@ -144,6 +165,41 @@
 			"ImportPath": "github.com/pkg/errors",
 			"Comment": "v0.8.0-2-g248dadf",
 			"Rev": "248dadf4e9068a0b3e79f02ed0a610d935de5302"
+		},
+		{
+			"ImportPath": "github.com/prometheus/client_golang/prometheus",
+			"Comment": "v0.8.0-49-g9c2f725",
+			"Rev": "9c2f7254672db910eb46f4764a9671987ff0f7b6"
+		},
+		{
+			"ImportPath": "github.com/prometheus/client_golang/prometheus/promhttp",
+			"Comment": "v0.8.0-49-g9c2f725",
+			"Rev": "9c2f7254672db910eb46f4764a9671987ff0f7b6"
+		},
+		{
+			"ImportPath": "github.com/prometheus/client_model/go",
+			"Comment": "model-0.0.2-12-gfa8ad6f",
+			"Rev": "fa8ad6fec33561be4280a8f0514318c79d7f6cb6"
+		},
+		{
+			"ImportPath": "github.com/prometheus/common/expfmt",
+			"Rev": "dd2f054febf4a6c00f2343686efb775948a8bff4"
+		},
+		{
+			"ImportPath": "github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg",
+			"Rev": "dd2f054febf4a6c00f2343686efb775948a8bff4"
+		},
+		{
+			"ImportPath": "github.com/prometheus/common/model",
+			"Rev": "dd2f054febf4a6c00f2343686efb775948a8bff4"
+		},
+		{
+			"ImportPath": "github.com/prometheus/procfs",
+			"Rev": "a59ae619c824360be3641ceb5a456ff13dd58be6"
+		},
+		{
+			"ImportPath": "github.com/prometheus/procfs/xfs",
+			"Rev": "a59ae619c824360be3641ceb5a456ff13dd58be6"
 		},
 		{
 			"ImportPath": "github.com/satori/go.uuid",
