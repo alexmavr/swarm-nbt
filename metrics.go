@@ -3,17 +3,21 @@ package main
 import "github.com/prometheus/client_golang/prometheus"
 
 var (
-	icmpRTT = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name: "icmp_rtt_histogram",
+	icmpRTT = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "icmp_rtt_gauge",
+		Help: "ICMP Round-Trip delay time gauge",
 	})
-	udpRTT = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name: "udp_rtt_histogram",
+	udpRTT = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "udp_rtt_gauge",
+		Help: "UDP Round-Trip delay time gauge",
 	})
-	udpPacketLoss = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name: "udp_packet_loss_histogram",
+	udpPacketLoss = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "udp_packet_loss_counter",
+		Help: "UDP Packet loss counter",
 	})
-	httpRTT = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name: "http_rtt_histogram",
+	httpRTT = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "http_rtt_gauge",
+		Help: "HTTP Round-Trip delay time gauge",
 	})
 )
 

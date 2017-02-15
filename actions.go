@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -140,50 +138,6 @@ func StopBenchmark(c *cli.Context) error {
 
 	ctx, cancelFunc := context.WithDeadline(context.Background(), time.Now().Add(time.Minute))
 	defer cancelFunc()
-
-	// Inspect the service to extract the list of nodes
-	svc, _, err := dclient.ServiceInspectWithRaw(ctx, "swarm-nbt-service")
-	if err != nil {
-		return err
-	}
-
-	var nodes map[string]string
-	for _, envVar := range svc.Spec.TaskTemplate.ContainerSpec.Env {
-		if !strings.Contains(envVar, "NODES") {
-			continue
-		}
-
-		parts := strings.Split(envVar, "=")
-		if len(parts) != 2 {
-			return fmt.Errorf("unexpected number of parts in env var: %s", envVar)
-		}
-
-		err = json.Unmarshal([]byte(parts[1]), &nodes)
-		if err != nil {
-			return err
-		}
-		break
-	}
-
-	// Collect the files from each node
-	for hostname, ip := range nodes {
-		log.Infof("Collecting logs for node %s with IP %s", hostname, ip)
-		for _, file := range []string{"icmp.txt", "http.txt"} {
-			resp, err := http.Get(fmt.Sprintf("http://%s:%s/%s", ip, httpServerPort, file))
-			if err != nil {
-				log.Errorf("unable to collect %s from node %s: %s", file, hostname, err)
-			}
-			httpOut, err := os.Open(fmt.Sprintf("/results/node_%s_http.txt", hostname))
-			if err != nil {
-				return err
-			}
-			defer resp.Body.Close()
-			_, err = io.Copy(httpOut, resp.Body)
-			if err != nil {
-				return err
-			}
-		}
-	}
 
 	// Remove the service
 	err = dclient.ServiceRemove(ctx, "swarm-nbt")

@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -78,52 +76,36 @@ func UCPCompatibilityStart() error {
 	}
 	nodeInventoryPayload := string(nodeInvBytes)
 
-	acc := "\ndocker volume create swarm-nbt-results\n &&"
-	for hostname := range nodeInventory {
+	prometheusInventory := "- targets: [ "
+
+	acc := "\ndocker volume create swarm-nbt-results &&\n"
+	for hostname, ip := range nodeInventory {
 		acc = fmt.Sprintf("%sdocker run -v /var/run/docker.sock:/var/run/docker.sock -v swarm-nbt-results:/results -e constraint:node==%s -d --rm -p 4443:4443 -p 6789:6789/udp -e NODES='%s' --label swarm.benchmark.tool=agent alexmavr/swarm-nbt:latest agent && \n", acc, hostname, nodeInventoryPayload)
+		if err != nil {
+			return err
+		}
+		prometheusInventory += fmt.Sprintf("\"%s:%d\",", ip, httpServerPort)
 	}
-	acc = acc + "echo done"
+	// Strip the last comma and append a right square bracket
+	prometheusInventory = prometheusInventory[:len(prometheusInventory)-1] + " ]\n"
+
+	// Write the node inventory to the expected location for prometheus to pick it up
+	invF, err := os.OpenFile("/inventory/inventory.yml", os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		return err
+	}
+	_, err = invF.Write([]byte(prometheusInventory))
+	if err != nil {
+		return err
+	}
+
+	acc = acc + "docker run -d -p 9090:9090 -v node-inventory:/inventory alexmavr/swarm-nbt-prometheus:latest \n"
 	fmt.Print(acc)
-	return nil
-}
-
-func copyFileFromNode(targetIP string, targetHostname string, filename string) error {
-	resp, err := http.Get(fmt.Sprintf("http://%s:4443/%s", targetIP, filename))
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	f, err := os.OpenFile(fmt.Sprintf("/results/%s_%s", targetHostname, filename), os.O_CREATE|os.O_WRONLY, os.ModeAppend)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	io.Copy(f, resp.Body)
 	return nil
 }
 
 // UCPCompatibilityStop collects the results from all containers
 func UCPCompatibilityStop() error {
-	nodeInventory, err := getNodeInventoryFromInfoStdin()
-	if err != nil {
-		return err
-	}
-
-	for hostname, ip := range nodeInventory {
-		for _, filename := range []string{"icmp.txt", "http.txt", "udp.txt"} {
-			err = copyFileFromNode(ip, hostname, filename)
-			if err != nil {
-				return err
-			}
-		}
-	}
-
-	err = ProcessResults()
-	if err != nil {
-		return err
-	}
-
 	// Return a container removal operation on stdout
 	acc := "docker ps --filter label=swarm.benchmark.tool=agent -q | xargs -n 1 docker rm -f"
 	fmt.Print(acc)

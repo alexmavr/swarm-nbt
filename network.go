@@ -93,13 +93,12 @@ func NetworkTest(dclient client.CommonAPIClient, nodes map[string]string, nodeAd
 	// by the bootstrapper during the collection phase
 	go func(errChan chan<- error) {
 		router := mux.NewRouter()
-		router.Handle("/prometheus", promhttp.Handler())
+		router.Handle("/metrics", promhttp.Handler())
 		router.PathPrefix("/").Handler(http.FileServer(http.Dir("/results")))
 		srv := &http.Server{
 			Handler: router,
 			Addr:    fmt.Sprintf(":%d", httpServerPort),
 		}
-		http
 		err := srv.ListenAndServe()
 		if err != nil {
 			errChan <- err
