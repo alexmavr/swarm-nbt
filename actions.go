@@ -19,8 +19,14 @@ import (
 )
 
 func StartBenchmark(c *cli.Context) error {
-	log.SetOutput(os.Stdout)
+	if c.Bool("stdin-nodes") {
+		// When --stdin-nodes is provided, the tool will expect a `docker info` plaintext blob
+		// on stdin. That blob will get parsed
+		log.SetOutput(os.Stderr)
+		return UCPCompatibilityMode()
+	}
 
+	log.SetOutput(os.Stdout)
 	dclient, err := getDockerClient(c.String("docker_socket"))
 	if err != nil {
 		return err

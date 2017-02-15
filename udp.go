@@ -74,10 +74,15 @@ func (p *UDPPinger) Run() {
 		uuidChan := make(chan string)
 
 		// In a goroutine, attempt to read the ACK response from the server
-		go func(uuidChan chan string) {
+		var terminated bool = false
+		go func(uuidChan chan string, terminated *bool) {
 			var buf [1024]byte
 			rlen, _, err := conn.ReadFromUDP(buf[:])
 			if err != nil {
+				if *terminated {
+					// Don't record an error if this was caused due to a timeout
+					return
+				}
 				log.Errorf("UDP Read error %s:", err)
 				_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tERROR-READ\t%s\t%s\n", time.Now().UnixNano(), target.IP.String(), err))
 				if err != nil {
@@ -95,7 +100,7 @@ func (p *UDPPinger) Run() {
 				return
 			}
 			uuidChan <- payloadParts[1]
-		}(uuidChan)
+		}(uuidChan, &terminated)
 
 		// Block on reception of the ACK, or a timeout
 		select {
@@ -108,6 +113,7 @@ func (p *UDPPinger) Run() {
 			if err != nil {
 				log.Errorf("unable to record UDP packet loss for uuid %s: %s", newUUID, err)
 			}
+			terminated = true
 		}
 
 		conn.Close()
@@ -154,7 +160,9 @@ func (p *UDPPinger) StartUDPServer(errChan chan<- error) {
 		if !ack {
 			packetUUID := payloadParts[0]
 			remoteIP := payloadParts[1]
-			log.Infof("UDP: Received SYN, sending ACK against %s for packet %s", remoteIP, packetUUID)
+			log.Infof("UDP: Received SYN, sending ACK against %s at %s for packet %s",
+				remoteIP, returnAddr.IP.String(), packetUUID)
+
 			// Prepend the payload with "ACKUDP\t"
 			payload := []byte(strings.Join([]string{
 				"ACKUDP",
@@ -167,6 +175,7 @@ func (p *UDPPinger) StartUDPServer(errChan chan<- error) {
 				errChan <- err
 				return
 			}
+			time.Sleep(10 * time.Second)
 			continue
 		}
 

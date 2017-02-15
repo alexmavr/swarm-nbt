@@ -21,6 +21,10 @@ var cmdStart = cli.Command{
 			Value:  "/var/run/docker.sock",
 			Hidden: true,
 		},
+		cli.BoolFlag{
+			Name:  "stdin-nodes",
+			Usage: "When set to true, the output of `docker info` will be read from stdin to determine the set of nodes. Instead of starting a global service, a set of `docker run` operations will be returned",
+		},
 	},
 }
 
