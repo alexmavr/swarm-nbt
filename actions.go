@@ -19,11 +19,11 @@ import (
 )
 
 func StartBenchmark(c *cli.Context) error {
-	if c.Bool("stdin-nodes") {
-		// When --stdin-nodes is provided, the tool will expect a `docker info` plaintext blob
+	if c.Bool("compat") {
+		// When --compat is provided, the tool will expect a `docker info` plaintext blob
 		// on stdin. That blob will get parsed
 		log.SetOutput(os.Stderr)
-		return UCPCompatibilityMode()
+		return UCPCompatibilityStart()
 	}
 
 	log.SetOutput(os.Stdout)
@@ -127,12 +127,16 @@ func StartBenchmark(c *cli.Context) error {
 // StopBenchmark determines the list of nodes, contacts the http server on each node
 // and collects all benchmark results. It then calls the process method of each result type
 func StopBenchmark(c *cli.Context) error {
-	log.SetOutput(os.Stdout)
-
 	dclient, err := getDockerClient(c.String("docker_socket"))
 	if err != nil {
 		return err
 	}
+
+	if c.Bool("compat") {
+		return UCPCompatibilityStop(dclient)
+	}
+
+	log.SetOutput(os.Stdout)
 
 	ctx, cancelFunc := context.WithDeadline(context.Background(), time.Now().Add(time.Minute))
 	defer cancelFunc()

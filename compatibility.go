@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,9 +10,12 @@ import (
 	"strings"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/client"
 )
 
-func UCPCompatibilityMode() error {
+func UCPCompatibilityStart() error {
 	// In 1.12, this tool is only operable under a classic swarm cluster
 	scanner := bufio.NewScanner(os.Stdin)
 
@@ -72,5 +76,22 @@ func UCPCompatibilityMode() error {
 	}
 	acc = acc + "echo done"
 	fmt.Print(acc)
+	return nil
+}
+
+// UCPCompatibilityStop collects the results from all containers
+func UCPCompatibilityStop(dclient client.CommonAPIClient) error {
+	args := filters.NewArgs()
+	args.Add("label", "swarm.benchmark.tool=agent")
+	containers, err := dclient.ContainerList(context.Background(), types.ContainerListOptions{
+		Filters: args,
+	})
+	if err != nil {
+		return fmt.Errorf("unable to list containers: %s", err)
+	}
+
+	for _, container := range containers {
+		log.Infof("Endpoint: %s:4443", container.Ports[0].IP)
+	}
 	return nil
 }

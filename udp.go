@@ -13,25 +13,35 @@ import (
 
 // UDPPinger
 type UDPPinger struct {
-	Targets  []*net.UDPAddr
+	Targets  []*udpTarget
 	Outfile  *os.File
 	NodeAddr *net.UDPAddr
 	Timeout  time.Duration
 }
 
-type PacketInfo struct {
-	SentTime time.Time
-	Dest     *net.UDPAddr
+type udpTarget struct {
+	Addr *net.UDPAddr
+	Conn *net.UDPConn
 }
 
 func (p *UDPPinger) AddIP(ip string) {
+	// It's not currently possible to respond to the client socket when communicating with
+	// a server on the same container. For this reason, silently skip the same from
+	// the targets list
+	if ip == p.NodeAddr.IP.String() {
+		return
+	}
+
 	addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", ip, udpServerPort))
 	if err != nil {
 		log.Errorf("unable to resolve UDP address: %s", ip)
 		return
 	}
 
-	p.Targets = append(p.Targets, addr)
+	p.Targets = append(p.Targets, &udpTarget{
+		Addr: addr,
+		Conn: nil,
+	})
 }
 
 func (p *UDPPinger) ReceivedPacket(packetUUID string, startTime time.Time, targetIP string) {
@@ -43,28 +53,34 @@ func (p *UDPPinger) ReceivedPacket(packetUUID string, startTime time.Time, targe
 	if err != nil {
 		log.Errorf("unable to mark packet with UUID %s as received: %s", packetUUID, err)
 	}
+	err = p.Outfile.Sync()
+	if err != nil {
+		log.Errorf("unable to sync UDP output file: %s", err)
+	}
 }
 
 func (p *UDPPinger) Run() {
 	for _, target := range p.Targets {
-		// Click the start time for the RTT measurement
-		startTime := time.Now()
-
-		// Open a UDP socket
-		conn, err := net.DialUDP("udp", nil, target)
-		if err != nil {
-			log.Errorf("unable to dial UDP target %s: %s", target.String(), err)
-			return
+		if target.Conn == nil {
+			// Open a UDP socket
+			conn, err := net.DialUDP("udp", nil, target.Addr)
+			if err != nil {
+				log.Errorf("unable to dial UDP target %s: %s", target.Addr.IP.String(), err)
+				return
+			}
+			target.Conn = conn
 		}
-		defer conn.Close()
+
+		// Capture the start time for the RTT measurement after a UDP socket is obtained
+		startTime := time.Now()
 
 		// Generate a random UUID for the packet ID
 		newUUID := uuid.NewV4().String()
 		payload := fmt.Sprintf("%s\t%s", newUUID, p.NodeAddr.IP.String())
 
-		log.Infof("UDP: sending SYN against %s, UUID: %s", target.IP.String(), newUUID)
+		log.Infof("UDP: sending SYN against %s, UUID: %s", target.Addr.IP.String(), newUUID)
 		// Send the UDP packet
-		_, err = conn.Write([]byte(payload))
+		_, err := target.Conn.Write([]byte(payload))
 		if err != nil {
 			log.Errorf("unable to write UDP packet: %s", err)
 			return
@@ -77,17 +93,19 @@ func (p *UDPPinger) Run() {
 		var terminated bool = false
 		go func(uuidChan chan string, terminated *bool) {
 			var buf [1024]byte
-			rlen, _, err := conn.ReadFromUDP(buf[:])
+			rlen, _, err := target.Conn.ReadFromUDP(buf[:])
 			if err != nil {
 				if *terminated {
 					// Don't record an error if this was caused due to a timeout
 					return
 				}
 				log.Errorf("UDP Read error %s:", err)
-				_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tERROR-READ\t%s\t%s\n", time.Now().UnixNano(), target.IP.String(), err))
+				_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tERROR-READ\t%s\t%s\n",
+					time.Now().UnixNano(), target.Addr.IP.String(), err))
 				if err != nil {
 					log.Errorf("Unable to output UDP Read error")
 				}
+
 				return
 			}
 
@@ -105,18 +123,22 @@ func (p *UDPPinger) Run() {
 		// Block on reception of the ACK, or a timeout
 		select {
 		case uuid := <-uuidChan:
-			p.ReceivedPacket(uuid, startTime, target.IP.String())
+			p.ReceivedPacket(uuid, startTime, target.Addr.IP.String())
 		case <-time.Tick(udpClientTimeout):
 			// The client waits on an ACK timeout
-			log.Warnf("UDP: Timeout waiting for ACK from %s", target.IP.String())
-			_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tLOST\t%s\t%s\n", time.Now().UnixNano(), newUUID, target.IP.String()))
+			log.Warnf("UDP: Timeout waiting for ACK from %s", target.Addr.IP.String())
+			_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tLOST\t%s\t%s\n", time.Now().UnixNano(), newUUID, target.Addr.IP.String()))
 			if err != nil {
 				log.Errorf("unable to record UDP packet loss for uuid %s: %s", newUUID, err)
 			}
-			terminated = true
-		}
 
-		conn.Close()
+			terminated = true
+
+			err = p.Outfile.Sync()
+			if err != nil {
+				log.Errorf("unable to sync UDP output file: %s", err)
+			}
+		}
 	}
 }
 
@@ -160,8 +182,9 @@ func (p *UDPPinger) StartUDPServer(errChan chan<- error) {
 		if !ack {
 			packetUUID := payloadParts[0]
 			remoteIP := payloadParts[1]
-			log.Infof("UDP: Received SYN, sending ACK against %s at %s for packet %s",
-				remoteIP, returnAddr.IP.String(), packetUUID)
+
+			log.Infof("UDP: Received SYN, sending ACK against %s at %s:%d for packet %s",
+				remoteIP, returnAddr.IP.String(), returnAddr.Port, packetUUID)
 
 			// Prepend the payload with "ACKUDP\t"
 			payload := []byte(strings.Join([]string{
