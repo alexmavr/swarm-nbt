@@ -32,6 +32,7 @@ func (p *HTTPPinger) Run() {
 		rtt := endTime.Sub(startTime)
 		log.Infof("HTTP: Target: %s receive, RTT: %v", target, rtt)
 		_, err = p.Outfile.WriteString(fmt.Sprintf("%d\t%s\t%d\n", time.Now().UnixNano(), target, rtt.Nanoseconds()))
+		httpRTT.WithLabelValues(target).Add(rtt.Seconds())
 		if err != nil {
 			log.Errorf("unable to write to HTTP results file: %s", err)
 		}
