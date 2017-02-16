@@ -66,7 +66,7 @@ func NetworkTest(dclient client.CommonAPIClient, nodes map[string]string, nodeAd
 	pinger.OnRecv = func(addr *net.IPAddr, rtt time.Duration) {
 		log.Infof("ICMP: Target: %s receive, RTT: %v", addr.String(), rtt)
 		_, err := icmpFile.WriteString(fmt.Sprintf("%d\t%s\t%d\n", time.Now().Nanosecond(), addr.String(), rtt.Nanoseconds()))
-		icmpRTT.WithLabelValues(addr.IP.String()).Add(rtt.Seconds())
+		icmpRTT.WithLabelValues(addr.IP.String()).Set(rtt.Seconds())
 		if err != nil {
 			log.Errorf("unable to write to ICMP results file: %s", err)
 		}
