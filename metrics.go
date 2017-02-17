@@ -13,11 +13,15 @@ var (
 	}, []string{"target"})
 	udpPacketLoss = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "udp_packet_loss_counter_cumulative",
-		Help: "UDP Packet loss counter, new losses increment the existing value",
+		Help: "Cumulative counter of UDP packet losses",
 	}, []string{"target"})
 	httpRTT = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "http_rtt_gauge_seconds",
 		Help: "HTTP Round-Trip delay time gauge in seconds",
+	}, []string{"target"})
+	httpTimeouts = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "http_timeout_occurence",
+		Help: "Boolean counter of HTTP session timeouts (10 second default timeout)",
 	}, []string{"target"})
 )
 

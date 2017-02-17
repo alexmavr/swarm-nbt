@@ -99,7 +99,7 @@ func UCPCompatibilityStart() error {
 		return err
 	}
 
-	acc = acc + "docker run -d -p 9090:9090 -v inventory:/inventory alexmavr/swarm-nbt-prometheus:latest \n"
+	acc = acc + "docker run -d -p 9090:9090 -v inventory:/inventory alexmavr/swarm-nbt-prometheus:latest && docker run -d -p 3000:3000 grafana/grafana \n"
 	fmt.Print(acc)
 	return nil
 }

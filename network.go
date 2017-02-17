@@ -27,10 +27,14 @@ const (
 	// maxPollWaitSeconds is the maximum number of seconds to wait
 	// between successive tests
 	maxPollWaitSeconds = 15
+
+	// recordFile captures measurements in a filesystem format
+	recordFile = false
 )
 
-var udpTimeout = 30 * time.Second
-var udpClientTimeout = 30 * time.Second
+var httpTimeout = 10 * time.Second
+var udpTimeout = 10 * time.Second
+var udpClientTimeout = 10 * time.Second
 var icmpMaxRTT = 10 * time.Second
 
 // NetworkTest collects network link information from the local node against all nodes in the
@@ -65,10 +69,12 @@ func NetworkTest(dclient client.CommonAPIClient, nodes map[string]string, nodeAd
 	pinger.MaxRTT = icmpMaxRTT
 	pinger.OnRecv = func(addr *net.IPAddr, rtt time.Duration) {
 		log.Infof("ICMP: Target: %s receive, RTT: %v", addr.String(), rtt)
-		_, err := icmpFile.WriteString(fmt.Sprintf("%d\t%s\t%d\n", time.Now().Nanosecond(), addr.String(), rtt.Nanoseconds()))
 		icmpRTT.WithLabelValues(addr.IP.String()).Set(rtt.Seconds())
-		if err != nil {
-			log.Errorf("unable to write to ICMP results file: %s", err)
+		if recordFile {
+			_, err := icmpFile.WriteString(fmt.Sprintf("%d\t%s\t%d\n", time.Now().Nanosecond(), addr.String(), rtt.Nanoseconds()))
+			if err != nil {
+				log.Errorf("unable to write to ICMP results file: %s", err)
+			}
 		}
 	}
 	pinger.OnIdle = func() {

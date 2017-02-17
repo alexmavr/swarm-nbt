@@ -49,12 +49,14 @@ func (p *UDPPinger) ReceivedPacket(packetUUID string, startTime time.Time, targe
 	now := time.Now()
 	rtt := now.Sub(startTime)
 	log.Infof("UDP: Received ACK, UUID: %s, RTT: %v", packetUUID, rtt)
-	_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tRECV\t%s\t%s\t%d\n", now.UnixNano(), packetUUID, targetIP, rtt.Nanoseconds()))
-	udpRTT.WithLabelValues(targetIP).Set(rtt.Seconds())
-	if err != nil {
-		log.Errorf("unable to mark packet with UUID %s as received: %s", packetUUID, err)
+	if recordFile {
+		_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tRECV\t%s\t%s\t%d\n", now.UnixNano(), packetUUID, targetIP, rtt.Nanoseconds()))
+		if err != nil {
+			log.Errorf("unable to mark packet with UUID %s as received: %s", packetUUID, err)
+		}
 	}
-	err = p.Outfile.Sync()
+	udpRTT.WithLabelValues(targetIP).Set(rtt.Seconds())
+	err := p.Outfile.Sync()
 	if err != nil {
 		log.Errorf("unable to sync UDP output file: %s", err)
 	}
@@ -100,11 +102,13 @@ func (p *UDPPinger) Run() {
 					return
 				}
 				log.Errorf("UDP Read error %s:", err)
-				_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tERROR-READ\t%s\t%s\n",
-					time.Now().UnixNano(), target.Addr.IP.String(), err))
 				udpPacketLoss.WithLabelValues(target.Addr.IP.String()).Inc()
-				if err != nil {
-					log.Errorf("Unable to output UDP Read error")
+				if recordFile {
+					_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tERROR-READ\t%s\t%s\n",
+						time.Now().UnixNano(), target.Addr.IP.String(), err))
+					if err != nil {
+						log.Errorf("Unable to output UDP Read error")
+					}
 				}
 
 				return
@@ -128,10 +132,12 @@ func (p *UDPPinger) Run() {
 		case <-time.Tick(udpClientTimeout):
 			// The client waits on an ACK timeout
 			log.Warnf("UDP: Timeout waiting for ACK from %s", target.Addr.IP.String())
-			_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tLOST\t%s\t%s\n", time.Now().UnixNano(), newUUID, target.Addr.IP.String()))
 			udpPacketLoss.WithLabelValues(target.Addr.IP.String()).Inc()
-			if err != nil {
-				log.Errorf("unable to record UDP packet loss for uuid %s: %s", newUUID, err)
+			if recordFile {
+				_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tLOST\t%s\t%s\n", time.Now().UnixNano(), newUUID, target.Addr.IP.String()))
+				if err != nil {
+					log.Errorf("unable to record UDP packet loss for uuid %s: %s", newUUID, err)
+				}
 			}
 			terminated = true
 
@@ -165,9 +171,9 @@ func (p *UDPPinger) StartUDPServer(errChan chan<- error) {
 		return
 	}
 	defer sock.Close()
-	sock.SetReadBuffer(1048576)
+	sock.SetReadBuffer(256)
 
-	var udpBuffer [1024]byte
+	var udpBuffer [256]byte
 	for {
 		rlen, returnAddr, err := sock.ReadFromUDP(udpBuffer[:])
 		if err != nil {
@@ -200,7 +206,6 @@ func (p *UDPPinger) StartUDPServer(errChan chan<- error) {
 				errChan <- err
 				return
 			}
-			time.Sleep(10 * time.Second)
 			continue
 		}
 
