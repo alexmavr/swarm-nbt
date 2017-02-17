@@ -129,10 +129,11 @@ func (p *UDPPinger) Run() {
 		select {
 		case uuid := <-uuidChan:
 			p.ReceivedPacket(uuid, startTime, target.Addr.IP.String())
+			udpPacketLoss.WithLabelValues(target.Addr.IP.String()).Set(0)
 		case <-time.Tick(udpClientTimeout):
 			// The client waits on an ACK timeout
 			log.Warnf("UDP: Timeout waiting for ACK from %s", target.Addr.IP.String())
-			udpPacketLoss.WithLabelValues(target.Addr.IP.String()).Inc()
+			udpPacketLoss.WithLabelValues(target.Addr.IP.String()).Set(1)
 			if recordFile {
 				_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tLOST\t%s\t%s\n", time.Now().UnixNano(), newUUID, target.Addr.IP.String()))
 				if err != nil {
