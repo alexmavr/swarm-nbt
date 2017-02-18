@@ -13,49 +13,52 @@ import (
 
 // UDPPinger
 type UDPPinger struct {
-	Targets  []*udpTarget
-	Outfile  *os.File
-	NodeAddr *net.UDPAddr
-	Timeout  time.Duration
+	Targets   []*udpTarget
+	Outfile   *os.File
+	NodeAddr  *net.UDPAddr
+	IsManager bool
+	Timeout   time.Duration
 }
 
 type udpTarget struct {
-	Addr *net.UDPAddr
-	Conn *net.UDPConn
+	IsManager bool
+	Addr      *net.UDPAddr
+	Conn      *net.UDPConn
 }
 
-func (p *UDPPinger) AddIP(ip string) {
+func (p *UDPPinger) AddTarget(node *Node) {
 	// It's not currently possible to respond to the client socket when communicating with
 	// a server on the same container. For this reason, silently skip the same from
 	// the targets list
-	if ip == p.NodeAddr.IP.String() {
+	if node.Address == p.NodeAddr.IP.String() {
 		return
 	}
 
-	addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", ip, udpServerPort))
+	udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", node.Address, udpServerPort))
 	if err != nil {
-		log.Errorf("unable to resolve UDP address: %s", ip)
+		log.Errorf("unable to resolve UDP address: %s", node.Address)
 		return
 	}
 
 	p.Targets = append(p.Targets, &udpTarget{
-		Addr: addr,
-		Conn: nil,
+		IsManager: node.IsManager,
+		Addr:      udpAddr,
+		Conn:      nil,
 	})
 }
 
-func (p *UDPPinger) ReceivedPacket(packetUUID string, startTime time.Time, targetIP string) {
+func (p *UDPPinger) ReceivedPacket(packetUUID string, startTime time.Time, target *udpTarget) {
 	// Mark the packet as received
 	now := time.Now()
 	rtt := now.Sub(startTime)
 	log.Infof("UDP: Received ACK, UUID: %s, RTT: %v", packetUUID, rtt)
 	if recordFile {
-		_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tRECV\t%s\t%s\t%d\n", now.UnixNano(), packetUUID, targetIP, rtt.Nanoseconds()))
+		_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tRECV\t%s\t%s\t%d\n", now.UnixNano(), packetUUID, target.Addr.IP.String(), rtt.Nanoseconds()))
 		if err != nil {
 			log.Errorf("unable to mark packet with UUID %s as received: %s", packetUUID, err)
 		}
 	}
-	udpRTT.WithLabelValues(targetIP).Set(rtt.Seconds())
+	udpRTT.WithLabelValues(target.Addr.IP.String(), formatManagersLabel(p.IsManager, target.IsManager)).Set(rtt.Seconds())
 	err := p.Outfile.Sync()
 	if err != nil {
 		log.Errorf("unable to sync UDP output file: %s", err)
@@ -102,7 +105,8 @@ func (p *UDPPinger) Run() {
 					return
 				}
 				log.Errorf("UDP Read error %s:", err)
-				udpPacketLoss.WithLabelValues(target.Addr.IP.String()).Inc()
+				udpPacketLoss.WithLabelValues(target.Addr.IP.String(), formatManagersLabel(p.IsManager, target.IsManager)).Set(1)
+				udpRTT.WithLabelValues(target.Addr.IP.String(), formatManagersLabel(p.IsManager, target.IsManager)).Set(0)
 				if recordFile {
 					_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tERROR-READ\t%s\t%s\n",
 						time.Now().UnixNano(), target.Addr.IP.String(), err))
@@ -128,12 +132,13 @@ func (p *UDPPinger) Run() {
 		// Block on reception of the ACK, or a timeout
 		select {
 		case uuid := <-uuidChan:
-			p.ReceivedPacket(uuid, startTime, target.Addr.IP.String())
-			udpPacketLoss.WithLabelValues(target.Addr.IP.String()).Set(0)
+			p.ReceivedPacket(uuid, startTime, target)
+			udpPacketLoss.WithLabelValues(target.Addr.IP.String(), formatManagersLabel(p.IsManager, target.IsManager)).Set(0)
 		case <-time.Tick(udpClientTimeout):
 			// The client waits on an ACK timeout
 			log.Warnf("UDP: Timeout waiting for ACK from %s", target.Addr.IP.String())
-			udpPacketLoss.WithLabelValues(target.Addr.IP.String()).Set(1)
+			udpPacketLoss.WithLabelValues(target.Addr.IP.String(), formatManagersLabel(p.IsManager, target.IsManager)).Set(1)
+			udpRTT.WithLabelValues(target.Addr.IP.String(), formatManagersLabel(p.IsManager, target.IsManager)).Set(0)
 			if recordFile {
 				_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tLOST\t%s\t%s\n", time.Now().UnixNano(), newUUID, target.Addr.IP.String()))
 				if err != nil {

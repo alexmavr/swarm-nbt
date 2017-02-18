@@ -13,7 +13,6 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	fastping "github.com/tatsushid/go-fastping"
 )
 
 const (
@@ -41,11 +40,11 @@ var icmpMaxRTT = 10 * time.Second
 // provided node inventory.
 // The following tests are performed:
 //		- ICMP RTT
-//		- HTTP RTT
+//		- HTTP Timeouts & RTT
 //		- UDP Packet Loss & RTT
-func NetworkTest(dclient client.CommonAPIClient, nodes map[string]string, nodeAddr string) error {
+func NetworkTest(dclient client.CommonAPIClient, nodes []*Node, localNode *Node) error {
 	log.Infof("Commencing network test against a cluster of %d nodes", len(nodes))
-	log.Infof("Local node address: %s", nodeAddr)
+	log.Infof("Local node address: %s", localNode.Address)
 
 	// Open the ICMP results file
 	icmpFile, err := os.OpenFile(icmpResultsFilePath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, os.ModeAppend)
@@ -65,31 +64,21 @@ func NetworkTest(dclient client.CommonAPIClient, nodes map[string]string, nodeAd
 	errChan := make(chan error)
 
 	// Create an ICMP Pinger
-	pinger := fastping.NewPinger()
-	pinger.MaxRTT = icmpMaxRTT
-	pinger.OnRecv = func(addr *net.IPAddr, rtt time.Duration) {
-		log.Infof("ICMP: Target: %s receive, RTT: %v", addr.String(), rtt)
-		icmpRTT.WithLabelValues(addr.IP.String()).Set(rtt.Seconds())
-		if recordFile {
-			_, err := icmpFile.WriteString(fmt.Sprintf("%d\t%s\t%d\n", time.Now().Nanosecond(), addr.String(), rtt.Nanoseconds()))
-			if err != nil {
-				log.Errorf("unable to write to ICMP results file: %s", err)
-			}
-		}
+	icmpPinger := &ICMPPinger{
+		IsManager: localNode.IsManager,
 	}
-	pinger.OnIdle = func() {
-		log.Debugf("ICMP Pinger Idle")
-	}
+	icmpPinger.Init()
 
 	// Create a UDP Pinger
-	udpNodeAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", nodeAddr, udpServerPort))
+	udpNodeAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", localNode.Address, udpServerPort))
 	if err != nil {
 		return err
 	}
 	udpPinger := &UDPPinger{
-		Outfile:  udpFile,
-		NodeAddr: udpNodeAddr,
-		Timeout:  udpTimeout,
+		Outfile:   udpFile,
+		NodeAddr:  udpNodeAddr,
+		Timeout:   udpTimeout,
+		IsManager: localNode.IsManager,
 	}
 
 	// Start a UDP Server on a separate goroutine at port udpServerPort
@@ -127,33 +116,28 @@ func NetworkTest(dclient client.CommonAPIClient, nodes map[string]string, nodeAd
 	}
 	defer httpOutFile.Close()
 	httpPinger := &HTTPPinger{
-		Outfile: httpOutFile,
+		Outfile:   httpOutFile,
+		IsManager: localNode.IsManager,
 	}
 	// Populate the pingers with the known node inventory
-	for hostname, addr := range nodes {
-		if addr == "127.0.0.1" {
-			log.Infof("Skipping local redirect on address %s", addr)
+	for _, node := range nodes {
+		if node.Address == "127.0.0.1" {
+			log.Infof("Skipping local redirect on address %s", node.Address)
 			continue
 		}
-		if hostname == "localhost" {
+		if node.Hostname == "localhost" {
 			log.Info("Skipping local redirect on localhost")
 			continue
 		}
-		log.Infof("Target node hostname: %s, IP Address: %s", hostname, addr)
-
-		ra, err := net.ResolveIPAddr("ip4:icmp", addr)
-		if err != nil {
-			return err
-		}
-
+		log.Infof("Target node hostname: %s, IP Address: %s", node.Hostname, node.Address)
 		// Add the IP address to the ICMP pinger
-		pinger.AddIPAddr(ra)
+		icmpPinger.AddTarget(node)
 
 		// Create an HTTP URL for the HTTP pinger
-		httpPinger.AddURL(fmt.Sprintf("http://%s:%d", addr, httpServerPort))
+		httpPinger.AddTarget(node)
 
-		// Create a UDP Address for the UDP pinger
-		udpPinger.AddIP(addr)
+		// Create a target for the UDP pinger
+		udpPinger.AddTarget(node)
 	}
 
 	// Long-lasting Client loop
@@ -163,7 +147,7 @@ func NetworkTest(dclient client.CommonAPIClient, nodes map[string]string, nodeAd
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err = pinger.Run()
+			err = icmpPinger.Run()
 			if err != nil {
 				log.Error(err)
 			}

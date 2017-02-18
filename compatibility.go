@@ -11,16 +11,19 @@ import (
 	log "github.com/Sirupsen/logrus"
 )
 
-func getNodeInventoryFromInfoStdin() (map[string]string, error) {
+func getNodeInventoryFromInfoStdin() ([]*Node, error) {
 	// In 1.12, this tool is only operable under a classic swarm cluster
 	scanner := bufio.NewScanner(os.Stdin)
 
 	// Extract the node inventory from the docker info output
-	nodeInventory := make(map[string]string) // dict from hostname to IPv4 address
+	nodeInventory := make(map[string]*Node) // dict from hostname to Node entries
+	flatNodeInventory := []*Node{}
 	expectedNodes := 0
 	parsingNodes := false
+	parsingManagers := false
 	var err error
 	for scanner.Scan() {
+		// Parse the "Nodes" section
 		if strings.HasPrefix(scanner.Text(), "Nodes:") {
 			// There's also a "Nodes:" segment under swarm.Info, but it has no
 			// leading whitespace
@@ -32,7 +35,7 @@ func getNodeInventoryFromInfoStdin() (map[string]string, error) {
 			expectedNodes, err = strconv.Atoi(parts[1])
 			if err != nil {
 				log.Info(scanner.Text())
-				return nodeInventory, err
+				return flatNodeInventory, err
 			}
 			parsingNodes = true
 			continue
@@ -43,14 +46,40 @@ func getNodeInventoryFromInfoStdin() (map[string]string, error) {
 		}
 
 		if parsingNodes {
+			if strings.Contains(scanner.Text(), "Cluster Managers") {
+				parsingManagers = true
+				parsingNodes = false
+				continue
+			}
 			// We are expecting node entries as "hostname: ip:port")
 			parts := strings.Split(scanner.Text(), ":")
 			log.Info(parts)
 			if len(parts) != 3 {
-				log.Info("I don't like these parts")
 				break
 			}
-			nodeInventory[strings.Trim(parts[0], " ")] = strings.Trim(parts[1], " ")
+			hostname := strings.Trim(parts[0], " ")
+			ip := strings.Trim(parts[1], " ")
+			nodeInventory[hostname] = &Node{
+				Hostname: hostname,
+				Address:  ip,
+			}
+		}
+
+		if parsingManagers {
+			// We are expecting node managers as "hostname: Healthy")
+			parts := strings.Split(scanner.Text(), ":")
+			log.Info(parts)
+			if len(parts) != 2 {
+				break
+			}
+			hostname := strings.Trim(parts[0], " ")
+			log.Info("attempting to mark manager with hostname %s")
+			mgr, ok := nodeInventory[hostname]
+			if !ok {
+				log.Errorf("Manager with hostname %s was not found in the node inventory with that hostname", hostname)
+				break
+			}
+			mgr.IsManager = true
 		}
 	}
 
@@ -59,7 +88,12 @@ func getNodeInventoryFromInfoStdin() (map[string]string, error) {
 		log.Warnf("we were expected to extract %d nodes instead", expectedNodes)
 	}
 
-	return nodeInventory, nil
+	// Flatten node inventory map to a list
+	for _, node := range nodeInventory {
+		flatNodeInventory = append(flatNodeInventory, node)
+	}
+
+	return flatNodeInventory, nil
 }
 
 func UCPCompatibilityStart() error {
@@ -79,12 +113,12 @@ func UCPCompatibilityStart() error {
 	prometheusInventory := "- targets: [ "
 
 	acc := "\ndocker volume create swarm-nbt-results &&\n"
-	for hostname, ip := range nodeInventory {
-		acc = fmt.Sprintf("%sdocker run -v /var/run/docker.sock:/var/run/docker.sock -v swarm-nbt-results:/results -e constraint:node==%s -d --rm -p 4443:4443 -p 6789:6789/udp -e NODES='%s' --label swarm.benchmark.tool=agent alexmavr/swarm-nbt:latest agent && \n", acc, hostname, nodeInventoryPayload)
+	for _, node := range nodeInventory {
+		acc = fmt.Sprintf("%sdocker run -v /var/run/docker.sock:/var/run/docker.sock -v swarm-nbt-results:/results -e constraint:node==%s -d --rm -p 4443:4443 -p 6789:6789/udp -e NODES='%s' --label swarm.benchmark.tool=agent alexmavr/swarm-nbt:latest agent && \n", acc, node.Hostname, nodeInventoryPayload)
 		if err != nil {
 			return err
 		}
-		prometheusInventory += fmt.Sprintf("\"%s:%d\",", ip, httpServerPort)
+		prometheusInventory += fmt.Sprintf("\"%s:%d\",", node.Address, httpServerPort)
 	}
 	// Strip the last comma and append a right square bracket
 	prometheusInventory = prometheusInventory[:len(prometheusInventory)-1] + " ]\n"
@@ -94,6 +128,7 @@ func UCPCompatibilityStart() error {
 	if err != nil {
 		return err
 	}
+	defer invF.Close()
 	_, err = invF.Write([]byte(prometheusInventory))
 	if err != nil {
 		return err

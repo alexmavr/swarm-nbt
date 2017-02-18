@@ -159,7 +159,7 @@ func NodeAgent(c *cli.Context) error {
 		return fmt.Errorf("empty node inventory received")
 	}
 
-	var nodes map[string]string
+	var nodes []*Node
 	err = json.Unmarshal([]byte(nodesJson), &nodes)
 	if err != nil {
 		return err
@@ -173,7 +173,14 @@ func NodeAgent(c *cli.Context) error {
 		return err
 	}
 
-	return NetworkTest(dclient, nodes, info.Swarm.NodeAddr)
+	// discover the local node
+	localNode := &Node{
+		Hostname:  info.Name,
+		Address:   info.Swarm.NodeAddr,
+		IsManager: info.Swarm.ControlAvailable,
+	}
+
+	return NetworkTest(dclient, nodes, localNode)
 }
 
 func getDockerClient(dockerSocket string) (client.CommonAPIClient, error) {

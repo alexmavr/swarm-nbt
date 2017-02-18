@@ -11,13 +11,23 @@ import (
 
 // HTTPPinger
 type HTTPPinger struct {
-	Targets []string
-	Outfile *os.File
-	client  *http.Client
+	Targets   []*HTTPTarget
+	Outfile   *os.File
+	client    *http.Client
+	IsManager bool
 }
 
-func (p *HTTPPinger) AddURL(urlString string) {
-	p.Targets = append(p.Targets, urlString)
+type HTTPTarget struct {
+	URL       string
+	IsManager bool
+}
+
+func (p *HTTPPinger) AddTarget(node *Node) {
+	url := fmt.Sprintf("http://%s:%d", node.Address, httpServerPort)
+	p.Targets = append(p.Targets, &HTTPTarget{
+		URL:       url,
+		IsManager: node.IsManager,
+	})
 }
 
 func (p *HTTPPinger) Run() {
@@ -28,10 +38,11 @@ func (p *HTTPPinger) Run() {
 	}
 	for _, target := range p.Targets {
 		startTime := time.Now()
-		_, err := p.client.Get(target)
+		_, err := p.client.Get(target.URL)
 		if err != nil {
 			// increment the HTTP timeout counter
-			httpTimeouts.WithLabelValues(target).Set(1)
+			httpTimeouts.WithLabelValues(target.URL, formatManagersLabel(p.IsManager, target.IsManager)).Set(1)
+			httpRTT.WithLabelValues(target.URL, formatManagersLabel(p.IsManager, target.IsManager)).Set(0)
 			continue
 			log.Errorf("unable to reach http target %s: %s", target, err)
 			if recordFile {
@@ -39,14 +50,14 @@ func (p *HTTPPinger) Run() {
 			}
 			continue
 		}
-		httpTimeouts.WithLabelValues(target).Set(0)
+		httpTimeouts.WithLabelValues(target.URL, formatManagersLabel(p.IsManager, target.IsManager)).Set(0)
 
 		endTime := time.Now()
 		rtt := endTime.Sub(startTime)
-		log.Infof("HTTP: Target: %s receive, RTT: %v", target, rtt)
-		httpRTT.WithLabelValues(target).Set(rtt.Seconds())
+		log.Infof("HTTP: Target: %s receive, RTT: %v", target.URL, rtt)
+		httpRTT.WithLabelValues(target.URL, formatManagersLabel(p.IsManager, target.IsManager)).Set(rtt.Seconds())
 		if recordFile {
-			_, err = p.Outfile.WriteString(fmt.Sprintf("%d\t%s\t%d\n", time.Now().UnixNano(), target, rtt.Nanoseconds()))
+			_, err = p.Outfile.WriteString(fmt.Sprintf("%d\t%s\t%d\n", time.Now().UnixNano(), target.URL, rtt.Nanoseconds()))
 			if err != nil {
 				log.Errorf("unable to write to HTTP results file: %s", err)
 			}
