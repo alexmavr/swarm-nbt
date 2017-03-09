@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	httpServerPort      = 4443
+	httpServerPort      = 3443
 	udpServerPort       = 6789
 	udpClientPort       = 6790
 	icmpResultsFilePath = "/results/icmp.txt"
@@ -31,10 +31,10 @@ const (
 	recordFile = false
 )
 
-var httpTimeout = 10 * time.Second
-var udpTimeout = 10 * time.Second
-var udpClientTimeout = 10 * time.Second
-var icmpMaxRTT = 10 * time.Second
+var httpTimeout = 5 * time.Second
+var udpTimeout = 5 * time.Second
+var udpClientTimeout = 5 * time.Second
+var icmpMaxRTT = 5 * time.Second
 
 // NetworkTest collects network link information from the local node against all nodes in the
 // provided node inventory.

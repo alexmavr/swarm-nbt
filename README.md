@@ -12,16 +12,23 @@ these measurements will be gathered on the tool runner container and processed i
 Usage (engine 1.13 or higher)
 =============================
 
-The tool supports the following operations:
+To start the network benchmark tool, 
 
-* start/continue benchmark:
+1) Run the following command on a swarm manager node:
 	```
-		docker run --rm -v /var/run/docker.sock:/var/run/docker.sock alexmavr/swarm-nbt start
+		docker run --rm -v inventory:/inventory -v /var/run/docker.sock:/var/run/docker.sock alexmavr/swarm-nbt start
 	```
 
-* stop benchmark:
+2) Expose port 3000 on that manager and visit it through the browser.
+3) Create a prometheus datasource and point it to the IP of the manager at port
+9090
+4) Import the grafana dashboard from the `grafana.json` file in this repository
+
+
+To stop the benchmark tool, run the following command on the initial swarm manager
+node
 	```
-		docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v /path/to/results/dir:/output alexmavr/swarm-nbt stop  
+		docker run --rm -v /var/run/docker.sock:/var/run/docker.sock alexmavr/swarm-nbt stop  
 	```
 
 Viewing Metrics 

@@ -11,5 +11,5 @@ RUN set -ex && apk add --no-cache --virtual .build-deps git && go get github.com
 GOARCH=$GOARCH GOOS=$GOOS CGO_ENABLED=0 godep go install -v -a -tags netgo -installsuffix netgo -ldflags "-w -X github.com/alexmavr/swarm-nbt/version.GITCOMMIT=$(git rev-parse --short HEAD) -X github.com/alexmavr/swarm-nbt/version.BUILDTIME=$(date -u +%FT%T%z)"  && \
 apk del .build-deps
 
-EXPOSE 4443
+EXPOSE 3443
 ENTRYPOINT ["/go/bin/swarm-nbt"]

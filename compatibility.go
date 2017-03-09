@@ -111,10 +111,9 @@ func UCPCompatibilityStart() error {
 	nodeInventoryPayload := string(nodeInvBytes)
 
 	prometheusInventory := "- targets: [ "
-
 	acc := "\ndocker volume create swarm-nbt-results &&\n"
 	for _, node := range nodeInventory {
-		acc = fmt.Sprintf("%sdocker run -v /var/run/docker.sock:/var/run/docker.sock -v swarm-nbt-results:/results -e constraint:node==%s -d --rm -p 4443:4443 -p 6789:6789/udp -e NODES='%s' --label swarm.benchmark.tool=agent alexmavr/swarm-nbt:latest agent && \n", acc, node.Hostname, nodeInventoryPayload)
+		acc = fmt.Sprintf("%sdocker run -v /var/run/docker.sock:/var/run/docker.sock -v swarm-nbt-results:/results -e constraint:node==%s -d -p 3443:3443 -p 6789:6789/udp -e NODES='%s' --label swarm.benchmark.tool=agent alexmavr/swarm-nbt:latest agent && \n", acc, node.Hostname, nodeInventoryPayload)
 		if err != nil {
 			return err
 		}

@@ -11,9 +11,11 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/codegangsta/cli"
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
+	"github.com/docker/go-connections/nat"
 )
 
 func StartBenchmark(c *cli.Context) error {
@@ -42,7 +44,7 @@ func StartBenchmark(c *cli.Context) error {
 		return fmt.Errorf("This node is not a Swarm Manager, please start the benchmark on a swarm manager node")
 	}
 
-	// Determine the node inventory and pass it as an environment variable
+	// Determine the node inventory in order to pass it as an environment variable
 	nodeInventory := make(map[string]string) // dict from hostname to IPv4 address
 	nodes, err := dclient.NodeList(ctx, types.NodeListOptions{})
 	if err != nil {
@@ -55,6 +57,25 @@ func StartBenchmark(c *cli.Context) error {
 			nodeInventory[node.Description.Hostname] = strings.Split(node.ManagerStatus.Addr, ":")[0]
 		}
 	}
+
+	// Create a node inventory payload for prometheus
+	prometheusInventory := "- targets: [ "
+	for _, addr := range nodeInventory {
+		prometheusInventory += fmt.Sprintf("\"%s:%d\",", addr, httpServerPort)
+	}
+	prometheusInventory = prometheusInventory[:len(prometheusInventory)-1] + " ]\n"
+
+	// Write the prometheus inventory to the expected location.
+	invF, err := os.OpenFile("/inventory/inventory.yml", os.O_CREATE|os.O_WRONLY, 0666)
+	if err != nil {
+		return err
+	}
+	defer invF.Close()
+	_, err = invF.Write([]byte(prometheusInventory))
+	if err != nil {
+		return err
+	}
+
 	// Marshal the node inventory into a string
 	nodeInvBytes, err := json.Marshal(nodeInventory)
 	if err != nil {
@@ -98,12 +119,6 @@ func StartBenchmark(c *cli.Context) error {
 				Command: []string{"/go/bin/swarm-nbt", "agent"},
 				Env:     []string{fmt.Sprintf("NODES=%s", nodeInventoryPayload)},
 				Mounts: []mount.Mount{
-					// Mount a volume for result data
-					mount.Mount{
-						Type:   mount.TypeVolume,
-						Source: "swarm-nbt-results",
-						Target: "/results",
-					},
 					// Bind-mount the docker socket
 					mount.Mount{
 						Type:   mount.TypeBind,
@@ -115,6 +130,67 @@ func StartBenchmark(c *cli.Context) error {
 		},
 	}
 	_, err = dclient.ServiceCreate(ctx, spec, types.ServiceCreateOptions{})
+	if err != nil {
+		return err
+	}
+
+	// Start a prometheus container
+	config := &container.Config{
+		Image: "alexmavr/swarm-nbt-prometheus",
+	}
+	hostconfig := &container.HostConfig{
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeVolume,
+				Source: "inventory",
+				Target: "/inventory",
+			},
+		},
+		PortBindings: nat.PortMap{
+			nat.Port("9090/tcp"): []nat.PortBinding{
+				{
+					HostIP:   "0.0.0.0",
+					HostPort: "9090",
+				},
+			},
+		},
+		RestartPolicy: container.RestartPolicy{
+			Name: "always",
+		},
+	}
+	resp, err := dclient.ContainerCreate(ctx, config, hostconfig, nil, "swarm-nbt-prometheus")
+	if err != nil {
+		return err
+	}
+
+	err = dclient.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{})
+	if err != nil {
+		return err
+	}
+
+	// Start the grafana container
+	config = &container.Config{
+		Image: "grafana/grafana",
+	}
+	hostconfig = &container.HostConfig{
+		PortBindings: nat.PortMap{
+			nat.Port("3000/tcp"): []nat.PortBinding{
+				{
+					HostIP:   "0.0.0.0",
+					HostPort: "3000",
+				},
+			},
+		},
+		RestartPolicy: container.RestartPolicy{
+			Name: "always",
+		},
+	}
+	resp, err = dclient.ContainerCreate(ctx, config, hostconfig, nil, "swarm-nbt-grafana")
+	if err != nil {
+		return err
+	}
+
+	err = dclient.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{})
 	if err != nil {
 		return err
 	}
