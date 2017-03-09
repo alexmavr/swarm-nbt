@@ -20,8 +20,10 @@ To start the network benchmark tool,
 	```
 
 2) Expose port 3000 on that manager and visit it through the browser.
+
 3) Create a prometheus datasource and point it to the IP of the manager at port
 9090
+
 4) Import the grafana dashboard from the `grafana.json` file in this repository
 
 
