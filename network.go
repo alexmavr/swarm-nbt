@@ -5,7 +5,6 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
@@ -16,19 +15,12 @@ import (
 )
 
 const (
-	httpServerPort      = 3443
-	udpServerPort       = 6789
-	udpClientPort       = 6790
-	icmpResultsFilePath = "/results/icmp.txt"
-	httpResultsFilePath = "/results/http.txt"
-	udpResultsFilePath  = "/results/udp.txt"
-
+	httpServerPort = 3443
+	udpServerPort  = 6789
+	udpClientPort  = 6790
 	// maxPollWaitSeconds is the maximum number of seconds to wait
 	// between successive tests
 	maxPollWaitSeconds = 15
-
-	// recordFile captures measurements in a filesystem format
-	recordFile = false
 )
 
 var httpTimeout = 5 * time.Second
@@ -46,20 +38,6 @@ func NetworkTest(dclient client.CommonAPIClient, nodes []*Node, localNode *Node)
 	log.Infof("Commencing network test against a cluster of %d nodes", len(nodes))
 	log.Infof("Local node address: %s", localNode.Address)
 
-	// Open the ICMP results file
-	icmpFile, err := os.OpenFile(icmpResultsFilePath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, os.ModeAppend)
-	if err != nil {
-		return err
-	}
-	defer icmpFile.Close()
-
-	// Open the UDP results file
-	udpFile, err := os.OpenFile(udpResultsFilePath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, os.ModeAppend)
-	if err != nil {
-		return err
-	}
-	defer udpFile.Close()
-
 	// Create an error channel
 	errChan := make(chan error)
 
@@ -75,7 +53,6 @@ func NetworkTest(dclient client.CommonAPIClient, nodes []*Node, localNode *Node)
 		return err
 	}
 	udpPinger := &UDPPinger{
-		Outfile:   udpFile,
 		NodeAddr:  udpNodeAddr,
 		Timeout:   udpTimeout,
 		IsManager: localNode.IsManager,
@@ -85,12 +62,9 @@ func NetworkTest(dclient client.CommonAPIClient, nodes []*Node, localNode *Node)
 	go udpPinger.StartUDPServer(errChan)
 
 	// Start an HTTP Server on a separate goroutine at port httpServerPort
-	// The HTTP File server is serving the /results directory, and is used
-	// by the bootstrapper during the collection phase
 	go func(errChan chan<- error) {
 		router := mux.NewRouter()
 		router.Handle("/metrics", promhttp.Handler())
-		router.PathPrefix("/").Handler(http.FileServer(http.Dir("/results")))
 		srv := &http.Server{
 			Handler: router,
 			Addr:    fmt.Sprintf(":%d", httpServerPort),
@@ -109,14 +83,7 @@ func NetworkTest(dclient client.CommonAPIClient, nodes []*Node, localNode *Node)
 		}
 	}(errChan)
 
-	// Create an HTTP Pinger
-	httpOutFile, err := os.OpenFile(httpResultsFilePath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, os.ModeAppend)
-	if err != nil {
-		return err
-	}
-	defer httpOutFile.Close()
 	httpPinger := &HTTPPinger{
-		Outfile:   httpOutFile,
 		IsManager: localNode.IsManager,
 	}
 	// Populate the pingers with the known node inventory

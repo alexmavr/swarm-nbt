@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"net"
-	"os"
 	"strings"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 // UDPPinger
 type UDPPinger struct {
 	Targets   []*udpTarget
-	Outfile   *os.File
 	NodeAddr  *net.UDPAddr
 	IsManager bool
 	Timeout   time.Duration
@@ -52,17 +50,7 @@ func (p *UDPPinger) ReceivedPacket(packetUUID string, startTime time.Time, targe
 	now := time.Now()
 	rtt := now.Sub(startTime)
 	log.Infof("UDP: Received ACK, UUID: %s, RTT: %v", packetUUID, rtt)
-	if recordFile {
-		_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tRECV\t%s\t%s\t%d\n", now.UnixNano(), packetUUID, target.Addr.IP.String(), rtt.Nanoseconds()))
-		if err != nil {
-			log.Errorf("unable to mark packet with UUID %s as received: %s", packetUUID, err)
-		}
-	}
 	udpRTT.WithLabelValues(target.Addr.IP.String(), formatManagersLabel(p.IsManager, target.IsManager)).Set(rtt.Seconds())
-	err := p.Outfile.Sync()
-	if err != nil {
-		log.Errorf("unable to sync UDP output file: %s", err)
-	}
 }
 
 func (p *UDPPinger) Run() {
@@ -107,13 +95,6 @@ func (p *UDPPinger) Run() {
 				log.Errorf("UDP Read error %s:", err)
 				udpPacketLoss.WithLabelValues(target.Addr.IP.String(), formatManagersLabel(p.IsManager, target.IsManager)).Set(1)
 				udpRTT.WithLabelValues(target.Addr.IP.String(), formatManagersLabel(p.IsManager, target.IsManager)).Set(0)
-				if recordFile {
-					_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tERROR-READ\t%s\t%s\n",
-						time.Now().UnixNano(), target.Addr.IP.String(), err))
-					if err != nil {
-						log.Errorf("Unable to output UDP Read error")
-					}
-				}
 
 				return
 			}
@@ -139,18 +120,7 @@ func (p *UDPPinger) Run() {
 			log.Warnf("UDP: Timeout waiting for ACK from %s", target.Addr.IP.String())
 			udpPacketLoss.WithLabelValues(target.Addr.IP.String(), formatManagersLabel(p.IsManager, target.IsManager)).Set(1)
 			udpRTT.WithLabelValues(target.Addr.IP.String(), formatManagersLabel(p.IsManager, target.IsManager)).Set(0)
-			if recordFile {
-				_, err := p.Outfile.WriteString(fmt.Sprintf("%d\tLOST\t%s\t%s\n", time.Now().UnixNano(), newUUID, target.Addr.IP.String()))
-				if err != nil {
-					log.Errorf("unable to record UDP packet loss for uuid %s: %s", newUUID, err)
-				}
-			}
 			terminated = true
-
-			err = p.Outfile.Sync()
-			if err != nil {
-				log.Errorf("unable to sync UDP output file: %s", err)
-			}
 		}
 		target.Conn.Close()
 	}

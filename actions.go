@@ -11,11 +11,9 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/codegangsta/cli"
 	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/client"
-	"github.com/docker/go-connections/nat"
 )
 
 func StartBenchmark(c *cli.Context) error {
@@ -138,63 +136,70 @@ func StartBenchmark(c *cli.Context) error {
 		return err
 	}
 
-	// Start a prometheus container
-	config := &container.Config{
-		Image: "alexmavr/swarm-nbt-prometheus",
-	}
-	hostconfig := &container.HostConfig{
-		Mounts: []mount.Mount{
-			{
-				Type:   mount.TypeVolume,
-				Source: "inventory",
-				Target: "/inventory",
-			},
+	// Start the prometheus service
+	spec = swarm.ServiceSpec{
+		Annotations: swarm.Annotations{
+			Name: "swarm-nbt-prometheus",
 		},
-		PortBindings: nat.PortMap{
-			nat.Port("9090/tcp"): []nat.PortBinding{
+		EndpointSpec: &swarm.EndpointSpec{
+			Ports: []swarm.PortConfig{
 				{
-					HostIP:   "0.0.0.0",
-					HostPort: "9090",
+					Protocol:      swarm.PortConfigProtocolTCP,
+					TargetPort:    9090,
+					PublishedPort: 9090,
 				},
 			},
 		},
-		RestartPolicy: container.RestartPolicy{
-			Name: "always",
-		},
-	}
-	resp, err := dclient.ContainerCreate(ctx, config, hostconfig, nil, "swarm-nbt-prometheus")
-	if err != nil {
-		return err
-	}
-
-	err = dclient.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{})
-	if err != nil {
-		return err
-	}
-
-	// Start the grafana container
-	config = &container.Config{
-		Image: "grafana/grafana",
-	}
-	hostconfig = &container.HostConfig{
-		PortBindings: nat.PortMap{
-			nat.Port("3000/tcp"): []nat.PortBinding{
-				{
-					HostIP:   "0.0.0.0",
-					HostPort: "3000",
+		TaskTemplate: swarm.TaskSpec{
+			ContainerSpec: swarm.ContainerSpec{
+				Image: "alexmavr/swarm-nbt-prometheus:latest",
+				Mounts: []mount.Mount{
+					// Bind-mount the docker socket
+					mount.Mount{
+						Type:   mount.TypeVolume,
+						Source: "inventory",
+						Target: "/inventory",
+					},
+				},
+			},
+			Placement: &swarm.Placement{
+				Constraints: []string{
+					fmt.Sprintf("node.hostname==%s", info.Name),
 				},
 			},
 		},
-		RestartPolicy: container.RestartPolicy{
-			Name: "always",
-		},
 	}
-	resp, err = dclient.ContainerCreate(ctx, config, hostconfig, nil, "swarm-nbt-grafana")
+	_, err = dclient.ServiceCreate(ctx, spec, types.ServiceCreateOptions{})
 	if err != nil {
 		return err
 	}
 
-	err = dclient.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{})
+	// Start the grafana service
+	spec = swarm.ServiceSpec{
+		Annotations: swarm.Annotations{
+			Name: "swarm-nbt-grafana",
+		},
+		EndpointSpec: &swarm.EndpointSpec{
+			Ports: []swarm.PortConfig{
+				{
+					Protocol:      swarm.PortConfigProtocolTCP,
+					TargetPort:    3000,
+					PublishedPort: 3000,
+				},
+			},
+		},
+		TaskTemplate: swarm.TaskSpec{
+			ContainerSpec: swarm.ContainerSpec{
+				Image: "grafana/grafana",
+			},
+			Placement: &swarm.Placement{
+				Constraints: []string{
+					fmt.Sprintf("node.hostname==%s", info.Name),
+				},
+			},
+		},
+	}
+	_, err = dclient.ServiceCreate(ctx, spec, types.ServiceCreateOptions{})
 	if err != nil {
 		return err
 	}
