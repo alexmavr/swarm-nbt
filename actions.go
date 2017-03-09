@@ -45,23 +45,27 @@ func StartBenchmark(c *cli.Context) error {
 	}
 
 	// Determine the node inventory in order to pass it as an environment variable
-	nodeInventory := make(map[string]string) // dict from hostname to IPv4 address
+	nodeInventory := []*Node{}
 	nodes, err := dclient.NodeList(ctx, types.NodeListOptions{})
 	if err != nil {
 		return err
 	}
 	for _, node := range nodes {
-		nodeInventory[node.Description.Hostname] = node.Status.Addr
 		if node.Status.Addr == "127.0.0.1" && node.ManagerStatus != nil {
 			// If the local manager node is reporting 127.0.0.1, use its manager address
-			nodeInventory[node.Description.Hostname] = strings.Split(node.ManagerStatus.Addr, ":")[0]
+			node.Status.Addr = strings.Split(node.ManagerStatus.Addr, ":")[0]
 		}
+		nodeInventory = append(nodeInventory, &Node{
+			Hostname:  node.Description.Hostname,
+			Address:   node.Status.Addr,
+			IsManager: node.Spec.Role == swarm.NodeRoleManager,
+		})
 	}
 
 	// Create a node inventory payload for prometheus
 	prometheusInventory := "- targets: [ "
-	for _, addr := range nodeInventory {
-		prometheusInventory += fmt.Sprintf("\"%s:%d\",", addr, httpServerPort)
+	for _, node := range nodeInventory {
+		prometheusInventory += fmt.Sprintf("\"%s:%d\",", node.Address, httpServerPort)
 	}
 	prometheusInventory = prometheusInventory[:len(prometheusInventory)-1] + " ]\n"
 
