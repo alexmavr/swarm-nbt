@@ -22,10 +22,9 @@ To start the network benchmark tool,
 2) Expose port 3000 on that manager and visit it through the browser. Username:
 admin, Password: admin
 
-3) Create a prometheus datasource and point it to the IP of the manager at port
-9090
+3) Create a prometheus datasource with any name and point it to `http://<some-node-IP>:9090`
 
-4) Import the grafana dashboard from the `grafana.json` file in this repository
+4) Import the grafana dashboard from the `grafana.json` file included in this repository. Use the prometheus datasource from step 3.
 
 To stop the benchmark tool, run the following command on the initial swarm manager
 node
@@ -36,9 +35,9 @@ node
 Viewing Metrics 
 ===============
 
-The benchmark tool starts a prometheus server on port 9090 of a single node in
-the cluster. The metrics can be viewed either directly on prometheus or using a
-graphana dashboard.
+The benchmark tool starts a prometheus server service on port 9090 and a grafana
+service on port 3000 of all nodes in the cluster. The metrics can be viewed
+either directly on prometheus or using the graphana dashboard.
 
 Engine 1.12 Compatibility Mode with Docker Swarm (not Swarm-Mode)
 ====================================================
