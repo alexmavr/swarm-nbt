@@ -85,10 +85,23 @@ func StartBenchmark(c *cli.Context) error {
 	}
 	nodeInventoryPayload := string(nodeInvBytes)
 
+	// Create an overlay network for component cross-interactions
+	_, err = dclient.NetworkCreate(ctx, "swarm-nbt-overlay", types.NetworkCreate{
+		Driver: "overlay",
+	})
+	if err != nil {
+		return err
+	}
+
 	// Start a global service that runs this image with the "agent" verb and a local volume mount
 	spec := swarm.ServiceSpec{
 		Annotations: swarm.Annotations{
 			Name: "swarm-nbt",
+		},
+		Networks: []swarm.NetworkAttachmentConfig{
+			swarm.NetworkAttachmentConfig{
+				Target: "swarm-nbt-overlay",
+			},
 		},
 		Mode: swarm.ServiceMode{
 			Global: &swarm.GlobalService{},
@@ -141,6 +154,11 @@ func StartBenchmark(c *cli.Context) error {
 		Annotations: swarm.Annotations{
 			Name: "swarm-nbt-prometheus",
 		},
+		Networks: []swarm.NetworkAttachmentConfig{
+			swarm.NetworkAttachmentConfig{
+				Target: "swarm-nbt-overlay",
+			},
+		},
 		EndpointSpec: &swarm.EndpointSpec{
 			Ports: []swarm.PortConfig{
 				{
@@ -178,6 +196,11 @@ func StartBenchmark(c *cli.Context) error {
 	spec = swarm.ServiceSpec{
 		Annotations: swarm.Annotations{
 			Name: "swarm-nbt-grafana",
+		},
+		Networks: []swarm.NetworkAttachmentConfig{
+			swarm.NetworkAttachmentConfig{
+				Target: "swarm-nbt-overlay",
+			},
 		},
 		EndpointSpec: &swarm.EndpointSpec{
 			Ports: []swarm.PortConfig{
