@@ -24,12 +24,15 @@ To start the network benchmark tool,
 2) Expose port 3000 on that manager and visit it through the browser. Username:
 admin, Password: admin
 
-3) Create a prometheus datasource with any name and point it to
-`http://<some-node-IP>:9090`. Set access to "direct" and do not use any
-credentials
+3) Click on the top-left menu and browse to Data Sources. Create a prometheus
+datasource with any name and point it to `http://<some-node-IP>:9090`. Set
+access to "direct" and do not use any credentials:
 
-4) Import the grafana dashboard from the `grafana.json` file included in this
-repository. Use the prometheus datasource from step 3.
+![Data Source Configuration](./datasource.png) 
+
+4) Click on the top-left menu, highlight "Dashboards" and select the "Import"
+option. Import the grafana dashboard from the `grafana.json` file included in
+this repository. Use the prometheus datasource from step 3.
 
 To stop the benchmark tool, run the following command on the initial swarm
 manager node
