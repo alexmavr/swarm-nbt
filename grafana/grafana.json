@@ -98,8 +98,8 @@
           },
           "yaxes": [
             {
-              "format": "short",
-              "label": "Seconds",
+              "format": "s",
+              "label": "",
               "logBase": 1,
               "max": null,
               "min": null,
@@ -253,8 +253,8 @@
           },
           "yaxes": [
             {
-              "format": "short",
-              "label": "Seconds",
+              "format": "s",
+              "label": "",
               "logBase": 1,
               "max": null,
               "min": null,
