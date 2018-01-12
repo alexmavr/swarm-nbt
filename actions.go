@@ -16,6 +16,15 @@ import (
 	"github.com/docker/docker/client"
 )
 
+func getEnv(key, defaultVal string) string {
+	if envVal, ok := os.LookupEnv(key); ok {
+		log.Infof("Using image: %s", envVal)
+		return envVal
+	}
+	log.Infof("%s not set, using default image (%s)", key, defaultVal)
+	return defaultVal
+}
+
 func StartBenchmark(c *cli.Context) error {
 	if c.Bool("compat") {
 		// When --compat is provided, the tool will expect a `docker info` plaintext blob
@@ -23,6 +32,10 @@ func StartBenchmark(c *cli.Context) error {
 		log.SetOutput(os.Stderr)
 		return UCPCompatibilityStart()
 	}
+
+	dockerNbtImage := getEnv("DOCKER_NBT_IMG", "alexmavr/swarm-nbt:latest")
+	dockerPromImage := getEnv("DOCKER_PROM_IMG", "alexmavr/swarm-nbt-prometheus:latest")
+	dockerGrafImage := getEnv("DOCKER_GRAF_IMG", "grafana/grafana")
 
 	log.SetOutput(os.Stdout)
 	dclient, err := getDockerClient(c.String("docker_socket"))
@@ -130,7 +143,7 @@ func StartBenchmark(c *cli.Context) error {
 		},
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: swarm.ContainerSpec{
-				Image:   "alexmavr/swarm-nbt:latest",
+				Image:   dockerNbtImage,
 				Command: []string{"/go/bin/swarm-nbt", "agent"},
 				Env:     []string{fmt.Sprintf("NODES=%s", nodeInventoryPayload)},
 				Mounts: []mount.Mount{
@@ -170,7 +183,7 @@ func StartBenchmark(c *cli.Context) error {
 		},
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: swarm.ContainerSpec{
-				Image: "alexmavr/swarm-nbt-prometheus:latest",
+				Image: dockerPromImage,
 				Mounts: []mount.Mount{
 					// Bind-mount the docker socket
 					mount.Mount{
@@ -213,7 +226,7 @@ func StartBenchmark(c *cli.Context) error {
 		},
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: swarm.ContainerSpec{
-				Image: "grafana/grafana",
+				Image: dockerGrafImage,
 			},
 			Placement: &swarm.Placement{
 				Constraints: []string{
